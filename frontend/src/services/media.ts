@@ -5,6 +5,7 @@ import type {
   IngestionJob,
   PreparedMedia,
   ScreenshotRecord,
+  SemanticCapabilities,
   TranscriptApiSegment,
   TranscriptSegment,
 } from '../types/models'
@@ -175,6 +176,7 @@ function normalizeSegments(
 export async function importLocalMedia(
   api: ApiClient,
   libraryId: string,
+  semanticCapabilities: SemanticCapabilities,
   file: File,
   onProgress?: (job: Partial<IngestionJob>) => void,
 ) {
@@ -281,33 +283,73 @@ export async function importLocalMedia(
   onProgress?.({
     ...job,
     status: 'running',
-    step: 'Generating embeddings',
+    step: 'Syncing semantic index',
     progress: 70,
     updatedAt: new Date().toISOString(),
   })
 
-  const embeddingResponse =
-    normalizedSegments.length > 0
-      ? await api.createEmbeddings(
-          libraryId,
-          normalizedSegments.map((segment) => segment.text),
-        )
-      : { model: 'text-embedding-3-small', dimensions: 1536, embeddings: [] }
-
-  const embeddingRecords: EmbeddingRecord[] = embeddingResponse.embeddings.map((vector, index) => {
-    const embeddingId = makeId('emb')
-    normalizedSegments[index].embeddingId = embeddingId
-    return {
-      id: embeddingId,
-      libraryId,
-      ownerType: 'transcript_segment',
-      ownerId: normalizedSegments[index].id,
-      model: embeddingResponse.model,
-      dimensions: embeddingResponse.dimensions,
-      vectorBlob: new Float32Array(vector).buffer,
-      createdAt: new Date().toISOString(),
+  let semanticSyncSucceeded = false
+  if (normalizedSegments.length > 0) {
+    try {
+      await api.syncSemanticTranscript(libraryId, {
+        corpusItem: {
+          id: corpusItemId,
+          title: updatedCorpusItem.title,
+          sourceFileName: updatedCorpusItem.sourceFileName,
+          mediaType: updatedCorpusItem.mediaType,
+          durationMs: updatedCorpusItem.durationMs,
+          importedAt: updatedCorpusItem.importedAt,
+          metadata: {
+            sizeBytes: updatedCorpusItem.sizeBytes,
+          },
+        },
+        chunks: normalizedSegments.map((segment) => ({
+          id: segment.id,
+          startMs: segment.startMs,
+          endMs: segment.endMs,
+          text: segment.text,
+          speaker: segment.speaker ?? undefined,
+          tokenCount: segment.tokenCount,
+        })),
+      })
+      semanticSyncSucceeded = true
+    } catch {
+      semanticSyncSucceeded = false
     }
-  })
+  }
+
+  const shouldBuildLocalEmbeddings = !semanticCapabilities.enabled || !semanticSyncSucceeded
+  let embeddingRecords: EmbeddingRecord[] = []
+
+  if (shouldBuildLocalEmbeddings && normalizedSegments.length > 0) {
+    onProgress?.({
+      ...job,
+      status: 'running',
+      step: 'Preparing local fallback index',
+      progress: 82,
+      updatedAt: new Date().toISOString(),
+    })
+
+    const embeddingResponse = await api.createEmbeddings(
+      libraryId,
+      normalizedSegments.map((segment) => segment.text),
+    )
+
+    embeddingRecords = embeddingResponse.embeddings.map((vector, index) => {
+      const embeddingId = makeId('emb')
+      normalizedSegments[index].embeddingId = embeddingId
+      return {
+        id: embeddingId,
+        libraryId,
+        ownerType: 'transcript_segment',
+        ownerId: normalizedSegments[index].id,
+        model: embeddingResponse.model,
+        dimensions: embeddingResponse.dimensions,
+        vectorBlob: new Float32Array(vector).buffer,
+        createdAt: new Date().toISOString(),
+      }
+    })
+  }
 
   await db.transaction(
     'rw',

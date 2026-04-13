@@ -33,7 +33,8 @@ class Settings(BaseSettings):
     openai_base_url: str | None = None
     transcription_model: str = "gpt-4o-transcribe-diarize"
     embedding_model: str = "text-embedding-3-small"
-    embedding_dimensions: int = 1536
+    embedding_dimensions: int = 256
+    semantic_working_set_size: int = 200
     answer_model: str = "gpt-5.4"
     answer_reasoning_effort: str = "low"
     answer_text_verbosity: str = "medium"

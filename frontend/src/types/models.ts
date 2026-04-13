@@ -152,6 +152,78 @@ export interface EvidenceBundle {
   segments: EvidenceSegment[]
   screenshots: EvidenceScreenshot[]
   refs: EvidenceRef[]
+  retrievalBackend?: string
+}
+
+export interface SemanticCapabilities {
+  enabled: boolean
+  retrievalBackend: string
+  fallbackBackend?: string | null
+  embeddingModel: string
+  embeddingDimensions: number
+  workingSetSize: number
+}
+
+export interface SemanticSearchFilters {
+  corpusItemIds?: string[]
+}
+
+export interface SemanticSearchHit {
+  id: string
+  corpusItemId: string
+  title: string
+  sourceFileName: string
+  text: string
+  startMs: number
+  endMs: number
+  speaker?: string | null
+  tokenCount: number
+  score: number
+  embedding: number[]
+}
+
+export interface ThemeRepresentative {
+  id: string
+  text: string
+  title?: string
+  timestampMs?: number
+}
+
+export interface ExplorePoint {
+  id: string
+  corpusItemId: string
+  title: string
+  sourceFileName: string
+  text: string
+  startMs: number
+  endMs: number
+  speaker?: string | null
+  score: number
+  clusterId: number
+  x: number
+  y: number
+}
+
+export interface ExploreCluster {
+  clusterId: number
+  representativeIds: string[]
+  representatives: ThemeRepresentative[]
+}
+
+export interface ClusterTheme {
+  clusterId: number
+  label: string
+  explanation: string
+  representativeIds: string[]
+}
+
+export interface ExploreSession {
+  query: string
+  retrievalBackend: string
+  hits: SemanticSearchHit[]
+  points: ExplorePoint[]
+  clusters: ExploreCluster[]
+  themes: ClusterTheme[]
 }
 
 export interface PreparedChunk {

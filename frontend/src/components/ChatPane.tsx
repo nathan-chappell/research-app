@@ -4,13 +4,14 @@ import { useEffect, useMemo } from 'react'
 
 import { appConfig } from '../config'
 import type { ApiClient } from '../services/api'
-import { retrieveLocalEvidence } from '../services/retrieval'
+import { retrieveEvidence } from '../services/retrieval'
 import { dispatchOpenLocalTimestamp } from '../utils/events'
-import type { EvidenceBundle } from '../types/models'
+import type { EvidenceBundle, SemanticCapabilities } from '../types/models'
 
 interface ChatPaneProps {
   api: ApiClient
   libraryId: string
+  semanticCapabilities: SemanticCapabilities
   activeCorpusItemId?: string
   activeThreadId?: string | null
   onThreadChange: (threadId: string | null) => void
@@ -20,6 +21,7 @@ interface ChatPaneProps {
 export function ChatPane({
   api,
   libraryId,
+  semanticCapabilities,
   activeCorpusItemId,
   activeThreadId,
   onThreadChange,
@@ -44,9 +46,10 @@ export function ChatPane({
                 ? [activeCorpusItemId]
                 : undefined
 
-          const evidence = await retrieveLocalEvidence(
+          const evidence = await retrieveEvidence(
             api,
             libraryId,
+            semanticCapabilities,
             query,
             corpusItemIds,
             topK,
@@ -57,7 +60,7 @@ export function ChatPane({
 
         return { ok: false }
       },
-    [activeCorpusItemId, api, libraryId, onEvidence],
+    [activeCorpusItemId, api, libraryId, onEvidence, semanticCapabilities],
   )
 
   const chat = useChatKit({
@@ -129,7 +132,7 @@ export function ChatPane({
       <Box px="md" py="sm" style={{ borderBottom: '1px solid #d7e6dd' }}>
         <Title order={3}>Chat</Title>
         <Text size="sm" c="dimmed">
-          ChatKit handles the thread UI; retrieval and media remain browser-local.
+          ChatKit handles the thread UI while evidence retrieval follows the semantic backend or local fallback.
         </Text>
       </Box>
       <Box style={{ height: 'calc(100% - 74px)' }}>

@@ -80,7 +80,7 @@ export function TranscriptPane({
         <div>
           <Title order={3}>Transcript</Title>
           <Text size="sm" c="dimmed">
-            Search locally, then hand only the retrieved evidence to the model.
+            Filter the active transcript locally while evidence and maps use semantic retrieval.
           </Text>
         </div>
         {selectedItem ? <Badge variant="light">{selectedItem.sourceFileName}</Badge> : null}

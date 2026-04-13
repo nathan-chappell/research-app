@@ -1,6 +1,6 @@
 import Dexie from 'dexie'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { AppShell, Box, Group, Loader, Stack, Text, Title } from '@mantine/core'
+import { AppShell, Box, Group, Loader, SegmentedControl, Stack, Text, Title } from '@mantine/core'
 import { notifications } from '@mantine/notifications'
 import { useEffect, useMemo, useState } from 'react'
 
@@ -12,6 +12,7 @@ import type { CorpusItem, EvidenceBundle, IngestionJob } from '../types/models'
 import { OPEN_LOCAL_TIMESTAMP_EVENT } from '../utils/events'
 import { ChatPane } from './ChatPane'
 import { EvidencePane } from './EvidencePane'
+import { ExplorePane } from './ExplorePane'
 import { LibraryRail } from './LibraryRail'
 import { TranscriptPane } from './TranscriptPane'
 
@@ -24,13 +25,14 @@ function sortByNewest<T extends { importedAt?: string; updatedAt?: string }>(ite
 }
 
 export function WorkspaceShell() {
-  const { api, auth, libraryId, isReady } = useWorkspaceBootstrap()
+  const { api, auth, libraryId, isReady, semanticCapabilities } = useWorkspaceBootstrap()
   const [selectedCorpusItemId, setSelectedCorpusItemId] = useState<string>()
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const [mediaUrl, setMediaUrl] = useState<string>()
   const [targetTimestampMs, setTargetTimestampMs] = useState<number>()
   const [evidence, setEvidence] = useState<EvidenceBundle | null>(null)
+  const [viewMode, setViewMode] = useState<'workspace' | 'explore'>('workspace')
 
   const corpusItems = useLiveQuery(
     async () =>
@@ -127,8 +129,8 @@ export function WorkspaceShell() {
     const timeout = window.setTimeout(() => {
       void (async () => {
         try {
-          const bundle = await import('../services/retrieval').then(({ retrieveLocalEvidence }) =>
-            retrieveLocalEvidence(api, libraryId, searchQuery, [selectedCorpusItemId], 6),
+          const bundle = await import('../services/retrieval').then(({ retrieveEvidence }) =>
+            retrieveEvidence(api, libraryId, semanticCapabilities, searchQuery, [selectedCorpusItemId], 6),
           )
           setEvidence(bundle)
         } catch {
@@ -138,14 +140,14 @@ export function WorkspaceShell() {
     }, 250)
 
     return () => window.clearTimeout(timeout)
-  }, [api, libraryId, searchQuery, selectedCorpusItemId])
+  }, [api, libraryId, searchQuery, selectedCorpusItemId, semanticCapabilities])
 
   const handleImportFiles = async (fileList: FileList) => {
     if (!libraryId) return
 
     for (const file of Array.from(fileList)) {
       try {
-        const result = await importLocalMedia(api, libraryId, file, async (job) => {
+        const result = await importLocalMedia(api, libraryId, semanticCapabilities, file, async (job) => {
           if (job.id) {
             await db.ingestionJobs.put(job as IngestionJob)
           }
@@ -192,90 +194,125 @@ export function WorkspaceShell() {
     >
       <AppShell.Header>
         <Group justify="space-between" px="lg" py="md" style={{ height: '100%' }}>
-          <div>
-            <Title order={2}>Research App</Title>
+          <Group gap="lg">
+            <div>
+              <Title order={2}>Research App</Title>
+              <Text size="sm" c="dimmed">
+                Media playback, semantic retrieval, browser clustering
+              </Text>
+            </div>
+            <SegmentedControl
+              value={viewMode}
+              onChange={(value) => setViewMode(value as 'workspace' | 'explore')}
+              data={[
+                { label: 'Workspace', value: 'workspace' },
+                { label: 'Explore', value: 'explore' },
+              ]}
+            />
+          </Group>
+          <Group gap="md">
             <Text size="sm" c="dimmed">
-              Browser-canonical corpus, SaaS-canonical threads
+              {semanticCapabilities.enabled ? 'Hosted semantic retrieval ready' : 'Local fallback mode'}
             </Text>
-          </div>
-          <Text size="sm" c="dimmed">
-            {auth.user?.name}
-          </Text>
+            <Text size="sm" c="dimmed">
+              {auth.user?.name}
+            </Text>
+          </Group>
         </Group>
       </AppShell.Header>
 
-      <Box
-        style={{
-          display: 'grid',
-          gridTemplateColumns: '280px minmax(420px, 1fr) 320px 420px',
-          gap: 16,
-          minHeight: 'calc(100vh - 100px)',
-        }}
-      >
+      {viewMode === 'workspace' ? (
         <Box
           style={{
-            borderRadius: 8,
-            border: '1px solid #d7e6dd',
-            background: '#f8fcf9',
-            padding: 16,
-            minHeight: 0,
+            display: 'grid',
+            gridTemplateColumns: '280px minmax(420px, 1fr) 320px 420px',
+            gap: 16,
+            minHeight: 'calc(100vh - 100px)',
           }}
         >
-          <LibraryRail
-            items={corpusItems}
-            jobs={ingestionJobs}
-            selectedCorpusItemId={selectedCorpusItemId}
-            onSelectCorpusItem={(corpusItemId) => {
-              setSelectedCorpusItemId(corpusItemId)
-              setTargetTimestampMs(undefined)
+          <Box
+            style={{
+              borderRadius: 8,
+              border: '1px solid #d7e6dd',
+              background: '#f8fcf9',
+              padding: 16,
+              minHeight: 0,
             }}
-            onImportFiles={handleImportFiles}
-          />
-        </Box>
+          >
+            <LibraryRail
+              items={corpusItems}
+              jobs={ingestionJobs}
+              selectedCorpusItemId={selectedCorpusItemId}
+              onSelectCorpusItem={(corpusItemId) => {
+                setSelectedCorpusItemId(corpusItemId)
+                setTargetTimestampMs(undefined)
+              }}
+              onImportFiles={handleImportFiles}
+            />
+          </Box>
 
+          <Box
+            style={{
+              borderRadius: 8,
+              border: '1px solid #d7e6dd',
+              background: '#f8fcf9',
+              padding: 16,
+              minHeight: 0,
+            }}
+          >
+            <TranscriptPane
+              selectedItem={selectedItem}
+              mediaUrl={mediaUrl}
+              segments={segments}
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
+              targetTimestampMs={targetTimestampMs}
+              onSeek={setTargetTimestampMs}
+            />
+          </Box>
+
+          <Box
+            style={{
+              borderRadius: 8,
+              border: '1px solid #d7e6dd',
+              background: '#f8fcf9',
+              padding: 16,
+              minHeight: 0,
+            }}
+          >
+            <EvidencePane evidence={evidence} />
+          </Box>
+
+          <Box style={{ minHeight: 0 }}>
+            <ChatPane
+              api={api}
+              libraryId={libraryId}
+              semanticCapabilities={semanticCapabilities}
+              activeCorpusItemId={selectedCorpusItemId}
+              activeThreadId={activeThreadId}
+              onThreadChange={setActiveThreadId}
+              onEvidence={setEvidence}
+            />
+          </Box>
+        </Box>
+      ) : (
         <Box
           style={{
+            minHeight: 'calc(100vh - 100px)',
             borderRadius: 8,
             border: '1px solid #d7e6dd',
             background: '#f8fcf9',
             padding: 16,
-            minHeight: 0,
           }}
         >
-          <TranscriptPane
-            selectedItem={selectedItem}
-            mediaUrl={mediaUrl}
-            segments={segments}
-            searchQuery={searchQuery}
-            onSearchQueryChange={setSearchQuery}
-            targetTimestampMs={targetTimestampMs}
-            onSeek={setTargetTimestampMs}
-          />
-        </Box>
-
-        <Box
-          style={{
-            borderRadius: 8,
-            border: '1px solid #d7e6dd',
-            background: '#f8fcf9',
-            padding: 16,
-            minHeight: 0,
-          }}
-        >
-          <EvidencePane evidence={evidence} />
-        </Box>
-
-        <Box style={{ minHeight: 0 }}>
-          <ChatPane
+          <ExplorePane
             api={api}
             libraryId={libraryId}
+            semanticCapabilities={semanticCapabilities}
             activeCorpusItemId={selectedCorpusItemId}
-            activeThreadId={activeThreadId}
-            onThreadChange={setActiveThreadId}
-            onEvidence={setEvidence}
           />
         </Box>
-      </Box>
+      )}
     </AppShell>
   )
 }

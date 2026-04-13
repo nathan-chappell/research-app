@@ -9,13 +9,14 @@ Local-first media research app with a Vite React SPA in `frontend/` and a FastAP
   - OPFS storage helpers for raw media and derived artifacts
   - Dexie schema for local corpus state
   - ffmpeg.wasm media worker
-  - MiniSearch + cosine retrieval worker
+  - MiniSearch + cosine retrieval worker for fallback search
+  - Browser-side k-means + UMAP explore worker
   - ChatKit pane wired to the self-hosted FastAPI protocol endpoint
 - `backend/`
   - FastAPI REST API and ChatKit server protocol endpoint
-  - SQLAlchemy models for users, libraries, threads, messages, evidence refs, OpenAI conversations, and usage events
+  - SQLAlchemy models for users, libraries, threads, messages, evidence refs, OpenAI conversations, usage events, and semantic transcript chunks
   - Generic bearer-token auth with OIDC/JWKS support
-  - OpenAI proxy endpoints for transcription, embeddings, and Responses-based answer synthesis
+  - OpenAI proxy endpoints for transcription, embeddings, semantic search, theme labeling, and Responses-based answer synthesis
 
 ## Local development
 
@@ -23,7 +24,8 @@ Backend:
 
 ```bash
 cd backend
-../.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+python3 -m pip install -r requirements.txt
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
 Frontend:
@@ -32,6 +34,18 @@ Frontend:
 cd frontend
 npm install
 npm run dev -- --host 127.0.0.1 --port 5173
+```
+
+## Semantic search modes
+
+- `sqlite`: the app keeps local import, transcript playback, evidence retrieval, and semantic exploration available through the browser fallback path.
+- `postgresql` with pgvector: the backend becomes the semantic authority for transcript chunk sync, embeddings, retrieval, and theme labeling. The server will attempt `CREATE EXTENSION IF NOT EXISTS vector` during startup.
+
+Recommended Postgres setup:
+
+```bash
+createdb research_app
+psql research_app -c 'CREATE EXTENSION IF NOT EXISTS vector;'
 ```
 
 ## Environment
@@ -44,6 +58,7 @@ The backend defaults to local-dev mode:
 Useful overrides:
 
 - `RESEARCH_APP_DATABASE_URL=mysql+pymysql://user:pass@host:3306/research_app`
+- `RESEARCH_APP_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/research_app`
 - `RESEARCH_APP_OPENAI_API_KEY=...`
 - `RESEARCH_APP_OIDC_ISSUER=...`
 - `RESEARCH_APP_OIDC_AUDIENCE=...`
@@ -61,5 +76,5 @@ Frontend overrides:
 
 ## Verification
 
-- Backend tests: `../.venv/bin/pytest backend/tests -q`
+- Backend tests: `python3 -m pytest backend/tests -q`
 - Frontend build: `cd frontend && npm run build`

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -432,3 +433,143 @@ class OpenAIService:
                 },
             )
         )
+
+    def _theme_keywords(self, texts: list[str]) -> list[str]:
+        stop_words = {
+            "about",
+            "after",
+            "again",
+            "also",
+            "because",
+            "being",
+            "between",
+            "could",
+            "first",
+            "from",
+            "have",
+            "into",
+            "just",
+            "like",
+            "more",
+            "most",
+            "only",
+            "other",
+            "over",
+            "same",
+            "some",
+            "such",
+            "than",
+            "that",
+            "their",
+            "them",
+            "then",
+            "there",
+            "these",
+            "they",
+            "this",
+            "those",
+            "very",
+            "what",
+            "when",
+            "where",
+            "which",
+            "while",
+            "with",
+            "would",
+        }
+        counts: dict[str, int] = {}
+        for text in texts:
+            for token in re.findall(r"[A-Za-z][A-Za-z'-]{2,}", text.lower()):
+                if token in stop_words:
+                    continue
+                counts[token] = counts.get(token, 0) + 1
+        return [word for word, _ in sorted(counts.items(), key=lambda item: (-item[1], item[0]))]
+
+    def _heuristic_theme_label(self, texts: list[str]) -> dict[str, str]:
+        keywords = self._theme_keywords(texts)[:2]
+        label = " / ".join(word.title() for word in keywords) if keywords else "Shared Theme"
+        explanation_source = next((text.strip() for text in texts if text.strip()), "")
+        explanation = explanation_source
+        if len(explanation) > 140:
+            explanation = explanation[:137].rsplit(" ", 1)[0] + "..."
+        if not explanation:
+            explanation = "Related transcript passages from the same semantic neighborhood."
+        return {"label": label, "explanation": explanation}
+
+    def _parse_theme_label_output(self, output_text: str) -> dict[str, str] | None:
+        if not output_text.strip():
+            return None
+        match = re.search(r"\{.*\}", output_text, re.DOTALL)
+        candidate = match.group(0) if match else output_text.strip()
+        try:
+            parsed = json.loads(candidate)
+        except json.JSONDecodeError:
+            return None
+
+        label = str(parsed.get("label") or "").strip()
+        explanation = str(parsed.get("explanation") or "").strip()
+        if not label or not explanation:
+            return None
+        return {"label": label, "explanation": explanation}
+
+    def label_themes(
+        self,
+        *,
+        db: Session,
+        user_id: str,
+        library_id: str,
+        clusters: list[dict[str, Any]],
+    ) -> list[dict[str, str]]:
+        labels: list[dict[str, str]] = []
+
+        for cluster in clusters:
+            representatives = cluster.get("representatives") or []
+            texts = [
+                str(representative.get("text") or "").strip()
+                for representative in representatives
+                if isinstance(representative, dict)
+            ]
+            texts = [text for text in texts if text]
+            heuristic = self._heuristic_theme_label(texts)
+
+            if self.client is None or not texts:
+                labels.append(heuristic)
+                continue
+
+            prompt_lines = [
+                "You are labeling a cluster of transcript snippets.",
+                'Return strict JSON with keys "label" and "explanation".',
+                "The label must be 2 to 5 words.",
+                "The explanation must be one sentence.",
+                "Snippets:",
+            ]
+            for index, text_value in enumerate(texts[:8], start=1):
+                prompt_lines.append(f"{index}. {text_value}")
+
+            try:
+                response = self.client.responses.create(
+                    model=self.settings.answer_model,
+                    input="\n".join(prompt_lines),
+                    reasoning={"effort": "low"},
+                    text={"verbosity": "low"},
+                    store=False,
+                    user=user_id,
+                    metadata={"library_id": library_id, "kind": "theme_label"},
+                )
+                parsed = self._parse_theme_label_output(response.output_text or "") or heuristic
+                usage = response.usage.model_dump() if response.usage else {}
+                self._record_usage(
+                    db,
+                    user_id=user_id,
+                    library_id=library_id,
+                    thread_id=None,
+                    kind="theme_labels",
+                    model=self.settings.answer_model,
+                    quantity=usage.get("total_tokens", 0),
+                    metadata=usage,
+                )
+                labels.append(parsed)
+            except Exception:
+                labels.append(heuristic)
+
+        return labels

@@ -44,7 +44,7 @@ export function EvidencePane({ evidence }: EvidencePaneProps) {
       <div>
         <Title order={3}>Evidence</Title>
         <Text size="sm" c="dimmed">
-          Retrieved locally from transcript text, embeddings, and nearby screenshots.
+          Retrieved from semantic search or the local browser fallback, with nearby screenshots from OPFS.
         </Text>
       </div>
 

@@ -23,10 +23,13 @@ from app.db.session import SessionLocal, engine
 from app.main import app
 from app.models import ChatAttachment, ChatMessage, ChatThread, OpenAIConversation
 from app.services.openai_service import OpenAIService
+from app.services.semantic_service import SemanticSearchService
 
 
 Base.metadata.create_all(bind=engine)
 app.state.openai_service = OpenAIService(get_settings())
+app.state.semantic_service = SemanticSearchService(get_settings(), engine, app.state.openai_service)
+app.state.semantic_service.initialize()
 app.state.chatkit_server = ResearchChatKitServer(
     store=SQLAlchemyChatKitStore(),
     attachment_store=SQLAlchemyAttachmentStore(),
@@ -70,8 +73,130 @@ def test_embeddings_endpoint() -> None:
     )
     assert response.status_code == 200
     payload = response.json()
-    assert payload["dimensions"] == 1536
+    assert payload["dimensions"] == 256
     assert len(payload["embeddings"]) == 2
+
+
+def test_health_and_semantic_capabilities_report_mode() -> None:
+    response = client.get("/health")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] == "ok"
+    assert payload["embedding_dimensions"] == 256
+    assert payload["semantic_search"]["enabled"] is False
+    assert payload["semantic_search"]["retrieval_backend"] == "python"
+
+    response = client.get("/api/semantic/capabilities")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["enabled"] is False
+    assert payload["fallback_backend"] == "local-browser"
+
+
+def test_semantic_sync_search_and_theme_labels() -> None:
+    client.post("/api/libraries/register", json={"library_id": "lib_test", "name": "Test Library"})
+
+    sync_response = client.post(
+        "/api/semantic/sync",
+        headers=_headers(),
+        json={
+            "library_id": "lib_test",
+            "corpus_item": {
+                "id": "corp_semantic",
+                "title": "Experiment Notes",
+                "source_file_name": "experiment.mp4",
+                "media_type": "video/mp4",
+                "duration_ms": 90000,
+                "imported_at": "2026-04-13T12:00:00Z",
+                "metadata": {"tag": "lab"},
+            },
+            "chunks": [
+                {
+                    "id": "seg_repeat",
+                    "start_ms": 12000,
+                    "end_ms": 18000,
+                    "text": "The experiment was repeated three times.",
+                    "speaker": "Speaker 1",
+                    "token_count": 6,
+                },
+                {
+                    "id": "seg_budget",
+                    "start_ms": 21000,
+                    "end_ms": 26000,
+                    "text": "The budget discussion moved to staffing and equipment.",
+                    "speaker": "Speaker 2",
+                    "token_count": 9,
+                },
+            ],
+        },
+    )
+    assert sync_response.status_code == 200
+    sync_payload = sync_response.json()
+    assert sync_payload["corpus_item_id"] == "corp_semantic"
+    assert sync_payload["chunk_count"] == 2
+    assert sync_payload["embedding_dimensions"] == 256
+    assert sync_payload["embedded_chunk_ids"] == ["seg_repeat", "seg_budget"]
+
+    search_response = client.post(
+        "/api/semantic/search",
+        headers=_headers(),
+        json={
+            "library_id": "lib_test",
+            "query": "The experiment was repeated three times.",
+            "top_k": 5,
+        },
+    )
+    assert search_response.status_code == 200
+    search_payload = search_response.json()
+    assert search_payload["retrieval_backend"] == "python"
+    assert search_payload["hits"][0]["id"] == "seg_repeat"
+    assert search_payload["hits"][0]["corpus_item_id"] == "corp_semantic"
+    assert len(search_payload["hits"][0]["embedding"]) == 256
+
+    filtered_search_response = client.post(
+        "/api/semantic/search",
+        headers=_headers(),
+        json={
+            "library_id": "lib_test",
+            "query": "The experiment was repeated three times.",
+            "top_k": 5,
+            "corpus_item_ids": ["missing_corpus"],
+        },
+    )
+    assert filtered_search_response.status_code == 200
+    assert filtered_search_response.json()["hits"] == []
+
+    theme_response = client.post(
+        "/api/semantic/themes/labels",
+        headers=_headers(),
+        json={
+            "library_id": "lib_test",
+            "clusters": [
+                {
+                    "cluster_id": 0,
+                    "representatives": [
+                        {
+                            "id": "seg_repeat",
+                            "text": "The experiment was repeated three times.",
+                            "title": "Experiment Notes",
+                            "timestamp_ms": 12000,
+                        },
+                        {
+                            "id": "seg_budget",
+                            "text": "The budget discussion moved to staffing and equipment.",
+                            "title": "Experiment Notes",
+                            "timestamp_ms": 21000,
+                        },
+                    ],
+                }
+            ],
+        },
+    )
+    assert theme_response.status_code == 200
+    theme_payload = theme_response.json()
+    assert theme_payload["labels"][0]["cluster_id"] == 0
+    assert theme_payload["labels"][0]["label"]
+    assert theme_payload["labels"][0]["explanation"]
 
 
 def test_chatkit_round_trip_streams_progress_and_metadata() -> None:

@@ -15,3 +15,13 @@ class Library(TimestampMixin, Base):
 
     user = relationship("User", back_populates="libraries")
     chat_threads = relationship("ChatThread", back_populates="library")
+    semantic_corpus_items = relationship(
+        "SemanticCorpusItem",
+        back_populates="library",
+        cascade="all, delete-orphan",
+    )
+    semantic_chunks = relationship(
+        "SemanticChunk",
+        back_populates="library",
+        cascade="all, delete-orphan",
+    )

@@ -6,6 +6,8 @@ import type {
   EvidenceScreenshot,
   EvidenceSegment,
   SearchDocRecord,
+  SemanticCapabilities,
+  SemanticSearchHit,
   TranscriptSegment,
 } from '../types/models'
 import { formatTimestamp } from '../utils/time'
@@ -124,13 +126,17 @@ function uniqueById<T extends { id: string }>(items: T[]) {
   return Array.from(new Map(items.map((item) => [item.id, item])).values())
 }
 
-export async function retrieveLocalEvidence(
+function isDefined<T>(value: T | undefined | null): value is T {
+  return value !== undefined && value !== null
+}
+
+async function searchLocalHits(
   api: ApiClient,
   libraryId: string,
   query: string,
   corpusItemIds: string[] | undefined,
-  topK = 6,
-): Promise<EvidenceBundle> {
+  topK: number,
+): Promise<SemanticSearchHit[]> {
   await buildIndex(libraryId)
   let queryVector: number[] | undefined
 
@@ -150,41 +156,44 @@ export async function retrieveLocalEvidence(
     corpusItemIds,
     queryVector,
   )
-
   const hitSegmentIds = hits.map((hit) => hit.segmentId)
-  const hitSegments = await db.transcriptSegments.bulkGet(hitSegmentIds)
-  const resolvedSegments = hitSegments.filter(Boolean) as TranscriptSegment[]
-  const neighborMap = new Map<string, TranscriptSegment>()
-
-  for (const segment of resolvedSegments) {
-    const neighbors = await db.transcriptSegments
-      .where('[libraryId+corpusItemId+startMs]')
-      .between(
-        [libraryId, segment.corpusItemId, Math.max(0, segment.startMs - 30000)],
-        [libraryId, segment.corpusItemId, segment.endMs + 30000],
-      )
-      .toArray()
-    neighbors.forEach((neighbor) => neighborMap.set(neighbor.id, neighbor))
-  }
-
-  const orderedSegments = uniqueById(
-    Array.from(neighborMap.values()).sort((left, right) => left.startMs - right.startMs),
+  const [embeddingRecords, corpusItems, transcriptSegments] = await Promise.all([
+    db.embeddings.where('libraryId').equals(libraryId).filter((record) => hitSegmentIds.includes(record.ownerId)).toArray(),
+    db.corpusItems.bulkGet(uniqueById(hits.map((hit) => ({ id: hit.corpusItemId }))).map((item) => item.id)),
+    db.transcriptSegments.bulkGet(hitSegmentIds),
+  ])
+  const embeddingsBySegmentId = new Map(
+    embeddingRecords.map((record) => [record.ownerId, decodeVector(record)]),
+  )
+  const corpusItemsById = new Map(corpusItems.filter(isDefined).map((item) => [item.id, item]))
+  const transcriptSegmentsById = new Map(
+    transcriptSegments.filter(isDefined).map((segment) => [segment.id, segment]),
   )
 
-  const evidenceSegments: EvidenceSegment[] = resolvedSegments.map((segment) => {
-    const matchingHit = hits.find((hit) => hit.segmentId === segment.id)
+  return hits.map((hit) => {
+    const corpusItem = corpusItemsById.get(hit.corpusItemId)
+    const transcriptSegment = transcriptSegmentsById.get(hit.segmentId)
     return {
-      id: segment.id,
-      corpusItemId: segment.corpusItemId,
-      timestampMs: segment.startMs,
-      timestampLabel: formatTimestamp(segment.startMs),
-      text: segment.text,
-      score: matchingHit?.score ?? 0,
-      speaker: segment.speaker,
+      id: hit.segmentId,
+      corpusItemId: hit.corpusItemId,
+      title: corpusItem?.title ?? hit.corpusItemId,
+      sourceFileName: corpusItem?.sourceFileName ?? '',
+      text: hit.text,
+      startMs: hit.startMs,
+      endMs: hit.endMs,
+      speaker: transcriptSegment?.speaker,
+      tokenCount: transcriptSegment?.tokenCount ?? 0,
+      score: hit.score,
+      embedding: embeddingsBySegmentId.get(hit.segmentId) ?? [],
     }
   })
+}
 
-  const screenshots = uniqueById(
+async function collectScreenshots(
+  libraryId: string,
+  evidenceSegments: EvidenceSegment[],
+) {
+  return uniqueById(
     (
       await Promise.all(
         evidenceSegments.slice(0, 3).map((segment) =>
@@ -207,6 +216,26 @@ export async function retrieveLocalEvidence(
       timestampLabel: formatTimestamp(shot.timestampMs),
       opfsPath: shot.opfsPath,
     }))
+}
+
+async function buildEvidenceBundle(
+  libraryId: string,
+  query: string,
+  hits: SemanticSearchHit[],
+  retrievalBackend: string,
+  topK: number,
+): Promise<EvidenceBundle> {
+  const evidenceSegments: EvidenceSegment[] = hits.slice(0, topK).map((hit) => ({
+    id: hit.id,
+    corpusItemId: hit.corpusItemId,
+    timestampMs: hit.startMs,
+    timestampLabel: formatTimestamp(hit.startMs),
+    text: hit.text,
+    score: hit.score,
+    speaker: hit.speaker,
+  }))
+
+  const screenshots = await collectScreenshots(libraryId, evidenceSegments)
 
   const refs: EvidenceRef[] = [
     ...evidenceSegments.map((segment) => ({
@@ -230,19 +259,111 @@ export async function retrieveLocalEvidence(
 
   return {
     query,
-    segments:
-      evidenceSegments.length > 0
-        ? evidenceSegments
-        : orderedSegments.slice(0, topK).map((segment) => ({
-            id: segment.id,
-            corpusItemId: segment.corpusItemId,
-            timestampMs: segment.startMs,
-            timestampLabel: formatTimestamp(segment.startMs),
-            text: segment.text,
-            score: 0,
-            speaker: segment.speaker,
-          })),
+    retrievalBackend,
+    segments: evidenceSegments,
     screenshots,
     refs,
   }
+}
+
+async function retrieveLocalOnlyEvidence(
+  api: ApiClient,
+  libraryId: string,
+  query: string,
+  corpusItemIds: string[] | undefined,
+  topK: number,
+): Promise<EvidenceBundle> {
+  const hits = await searchLocalHits(api, libraryId, query, corpusItemIds, Math.max(topK, 24))
+  if (hits.length > 0) {
+    return buildEvidenceBundle(libraryId, query, hits, 'local-browser', topK)
+  }
+
+  const hitSegmentIds = hits.map((hit) => hit.id)
+  const hitSegments = await db.transcriptSegments.bulkGet(hitSegmentIds)
+  const resolvedSegments = hitSegments.filter(Boolean) as TranscriptSegment[]
+  const neighborMap = new Map<string, TranscriptSegment>()
+
+  for (const segment of resolvedSegments) {
+    const neighbors = await db.transcriptSegments
+      .where('[libraryId+corpusItemId+startMs]')
+      .between(
+        [libraryId, segment.corpusItemId, Math.max(0, segment.startMs - 30000)],
+        [libraryId, segment.corpusItemId, segment.endMs + 30000],
+      )
+      .toArray()
+    neighbors.forEach((neighbor) => neighborMap.set(neighbor.id, neighbor))
+  }
+
+  const orderedSegments = uniqueById(
+    Array.from(neighborMap.values()).sort((left, right) => left.startMs - right.startMs),
+  )
+
+  return {
+    query,
+    retrievalBackend: 'local-browser',
+    segments: orderedSegments.slice(0, topK).map((segment) => ({
+      id: segment.id,
+      corpusItemId: segment.corpusItemId,
+      timestampMs: segment.startMs,
+      timestampLabel: formatTimestamp(segment.startMs),
+      text: segment.text,
+      score: 0,
+      speaker: segment.speaker,
+    })),
+    screenshots: [],
+    refs: [],
+  }
+}
+
+export async function loadSemanticWorkingSet(
+  api: ApiClient,
+  libraryId: string,
+  semanticCapabilities: SemanticCapabilities,
+  query: string,
+  corpusItemIds: string[] | undefined,
+  topK: number,
+): Promise<{ retrievalBackend: string; hits: SemanticSearchHit[] }> {
+  if (!query.trim()) {
+    return { retrievalBackend: semanticCapabilities.retrievalBackend, hits: [] }
+  }
+
+  if (semanticCapabilities.enabled) {
+    try {
+      const response = await api.searchSemantic(libraryId, query, topK, { corpusItemIds })
+      return {
+        retrievalBackend: response.retrievalBackend,
+        hits: response.hits,
+      }
+    } catch {
+      // Fall through to the local browser search cache.
+    }
+  }
+
+  return {
+    retrievalBackend: 'local-browser',
+    hits: await searchLocalHits(api, libraryId, query, corpusItemIds, topK),
+  }
+}
+
+export async function retrieveEvidence(
+  api: ApiClient,
+  libraryId: string,
+  semanticCapabilities: SemanticCapabilities,
+  query: string,
+  corpusItemIds: string[] | undefined,
+  topK = 6,
+): Promise<EvidenceBundle> {
+  const workingSet = await loadSemanticWorkingSet(
+    api,
+    libraryId,
+    semanticCapabilities,
+    query,
+    corpusItemIds,
+    Math.max(topK, 24),
+  )
+  if (workingSet.hits.length > 0) {
+    return buildEvidenceBundle(libraryId, query, workingSet.hits, workingSet.retrievalBackend, topK)
+  }
+
+  return retrieveLocalOnlyEvidence(api, libraryId, query, corpusItemIds, topK)
 }

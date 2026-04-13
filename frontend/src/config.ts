@@ -8,7 +8,7 @@ export const appConfig = {
   oidcPostLogoutRedirectPath:
     import.meta.env.VITE_OIDC_POST_LOGOUT_REDIRECT_PATH ?? '/login',
   chatkitDomainKey: import.meta.env.VITE_CHATKIT_DOMAIN_KEY ?? 'dev-domain-key',
-  embeddingDimensions: Number(import.meta.env.VITE_EMBEDDING_DIMENSIONS ?? '1536'),
+  embeddingDimensions: Number(import.meta.env.VITE_EMBEDDING_DIMENSIONS ?? '256'),
   transcriptionChunkBytes: 20 * 1024 * 1024,
 }
 

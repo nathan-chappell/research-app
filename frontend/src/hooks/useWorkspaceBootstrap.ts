@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { useAppAuth } from '../auth/context'
 import { db } from '../db/schema'
 import { createApiClient } from '../services/api'
+import type { SemanticCapabilities } from '../types/models'
 import { makeId } from '../utils/id'
 
 const LIBRARY_STORAGE_KEY = 'research-app:library-id'
@@ -11,6 +12,14 @@ export function useWorkspaceBootstrap() {
   const auth = useAppAuth()
   const api = useMemo(() => createApiClient(auth.getAccessToken), [auth])
   const [libraryId, setLibraryId] = useState<string | null>(null)
+  const [semanticCapabilities, setSemanticCapabilities] = useState<SemanticCapabilities>({
+    enabled: false,
+    retrievalBackend: 'python',
+    fallbackBackend: 'local-browser',
+    embeddingModel: 'text-embedding-3-small',
+    embeddingDimensions: 256,
+    workingSetSize: 200,
+  })
   const [isReady, setIsReady] = useState(false)
 
   useEffect(() => {
@@ -51,6 +60,12 @@ export function useWorkspaceBootstrap() {
         // Stay usable offline or without a running backend.
       }
 
+      try {
+        setSemanticCapabilities(await api.getSemanticCapabilities())
+      } catch {
+        setSemanticCapabilities((current) => current)
+      }
+
       if (!cancelled) {
         setLibraryId(resolvedLibraryId)
         setIsReady(true)
@@ -62,5 +77,5 @@ export function useWorkspaceBootstrap() {
     }
   }, [api, auth.isAuthenticated, auth.isLoading])
 
-  return { api, auth, libraryId, isReady }
+  return { api, auth, libraryId, isReady, semanticCapabilities }
 }

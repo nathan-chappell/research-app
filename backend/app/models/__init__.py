@@ -4,6 +4,8 @@ from app.models.chat_message_evidence_ref import ChatMessageEvidenceRef
 from app.models.chat_thread import ChatThread
 from app.models.library import Library
 from app.models.openai_conversation import OpenAIConversation
+from app.models.semantic_chunk import SemanticChunk
+from app.models.semantic_corpus_item import SemanticCorpusItem
 from app.models.usage_event import UsageEvent
 from app.models.user import User
 
@@ -14,6 +16,8 @@ __all__ = [
     "ChatThread",
     "Library",
     "OpenAIConversation",
+    "SemanticChunk",
+    "SemanticCorpusItem",
     "UsageEvent",
     "User",
 ]
