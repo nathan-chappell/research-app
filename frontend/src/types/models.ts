@@ -5,6 +5,14 @@ export interface LocalLibrary {
   lastSyncedAt?: string
 }
 
+export type WatchCaptureMode = 'audio' | 'audio_video'
+
+export type WatchTargetMode = 'iframe' | 'direct_tab'
+
+export type WatchPopupStatus = 'closed' | 'opening' | 'ready' | 'blocked'
+
+export type WatchRecordingStatus = 'idle' | 'capturing' | 'stopping' | 'error'
+
 export interface CorpusItem {
   id: string
   libraryId: string
@@ -16,6 +24,12 @@ export interface CorpusItem {
   importedAt: string
   status: 'ready' | 'processing' | 'error'
   sizeBytes: number
+  sourceKind?: 'upload' | 'watch_capture'
+  sourceUrl?: string
+  captureSessionId?: string
+  captureChunkIndex?: number
+  captureMode?: WatchCaptureMode
+  captureStartedAt?: string
 }
 
 export interface IngestionJob {
@@ -248,4 +262,20 @@ export interface PreparedMedia {
   chunks: PreparedChunk[]
   screenshots: PreparedScreenshot[]
   warnings: string[]
+}
+
+export interface WatchSessionState {
+  captureSessionId: string
+  targetUrl: string
+  normalizedUrl?: string
+  targetMode: WatchTargetMode
+  captureMode: WatchCaptureMode
+  popupStatus: WatchPopupStatus
+  recordingStatus: WatchRecordingStatus
+  currentChunkIndex: number
+  chunkStartedAt?: string
+  captureStartedAt?: string
+  pendingImports: number
+  importedChunks: number
+  error?: string
 }

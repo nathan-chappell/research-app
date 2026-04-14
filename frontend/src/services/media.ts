@@ -8,6 +8,7 @@ import type {
   SemanticCapabilities,
   TranscriptApiSegment,
   TranscriptSegment,
+  WatchCaptureMode,
 } from '../types/models'
 import { makeId } from '../utils/id'
 import { formatTimestamp } from '../utils/time'
@@ -25,6 +26,17 @@ export interface TranscriptChunkManifest {
   start_ms: number
   overlap_ms: number
   duration_ms?: number
+}
+
+export interface ImportLocalMediaOptions {
+  title?: string
+  sourceFileName?: string
+  sourceKind?: 'upload' | 'watch_capture'
+  sourceUrl?: string
+  captureSessionId?: string
+  captureChunkIndex?: number
+  captureMode?: WatchCaptureMode
+  captureStartedAt?: string
 }
 
 type WorkerRequest =
@@ -179,23 +191,31 @@ export async function importLocalMedia(
   semanticCapabilities: SemanticCapabilities,
   file: File,
   onProgress?: (job: Partial<IngestionJob>) => void,
+  options: ImportLocalMediaOptions = {},
 ) {
   const corpusItemId = makeId('corp')
   const jobId = makeId('job')
-  const sourcePath = sourceOpfsPath(libraryId, corpusItemId, file.name)
+  const sourceFileName = options.sourceFileName ?? file.name
+  const sourcePath = sourceOpfsPath(libraryId, corpusItemId, sourceFileName)
   const now = new Date().toISOString()
 
   const corpusItem: CorpusItem = {
     id: corpusItemId,
     libraryId,
-    title: file.name.replace(/\.[^.]+$/, ''),
+    title: options.title ?? sourceFileName.replace(/\.[^.]+$/, ''),
     mediaType: file.type,
     durationMs: null,
     opfsPath: sourcePath,
-    sourceFileName: file.name,
+    sourceFileName,
     importedAt: now,
     status: 'processing',
     sizeBytes: file.size,
+    sourceKind: options.sourceKind ?? 'upload',
+    sourceUrl: options.sourceUrl,
+    captureSessionId: options.captureSessionId,
+    captureChunkIndex: options.captureChunkIndex,
+    captureMode: options.captureMode,
+    captureStartedAt: options.captureStartedAt,
   }
 
   const job: IngestionJob = {
@@ -291,6 +311,27 @@ export async function importLocalMedia(
   let semanticSyncSucceeded = false
   if (normalizedSegments.length > 0) {
     try {
+      const semanticMetadata: Record<string, unknown> = {
+        sizeBytes: updatedCorpusItem.sizeBytes,
+        sourceKind: updatedCorpusItem.sourceKind ?? 'upload',
+      }
+
+      if (updatedCorpusItem.sourceUrl) {
+        semanticMetadata.sourceUrl = updatedCorpusItem.sourceUrl
+      }
+      if (updatedCorpusItem.captureSessionId) {
+        semanticMetadata.captureSessionId = updatedCorpusItem.captureSessionId
+      }
+      if (typeof updatedCorpusItem.captureChunkIndex === 'number') {
+        semanticMetadata.captureChunkIndex = updatedCorpusItem.captureChunkIndex
+      }
+      if (updatedCorpusItem.captureMode) {
+        semanticMetadata.captureMode = updatedCorpusItem.captureMode
+      }
+      if (updatedCorpusItem.captureStartedAt) {
+        semanticMetadata.captureStartedAt = updatedCorpusItem.captureStartedAt
+      }
+
       await api.syncSemanticTranscript(libraryId, {
         corpusItem: {
           id: corpusItemId,
@@ -299,9 +340,7 @@ export async function importLocalMedia(
           mediaType: updatedCorpusItem.mediaType,
           durationMs: updatedCorpusItem.durationMs,
           importedAt: updatedCorpusItem.importedAt,
-          metadata: {
-            sizeBytes: updatedCorpusItem.sizeBytes,
-          },
+          metadata: semanticMetadata,
         },
         chunks: normalizedSegments.map((segment) => ({
           id: segment.id,
@@ -310,6 +349,7 @@ export async function importLocalMedia(
           text: segment.text,
           speaker: segment.speaker ?? undefined,
           tokenCount: segment.tokenCount,
+          metadata: semanticMetadata,
         })),
       })
       semanticSyncSucceeded = true

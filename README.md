@@ -20,19 +20,35 @@ Local-first media research app with a Vite React SPA in `frontend/` and a FastAP
 
 ## Local development
 
-Backend:
+Install Python dependencies from the repo root:
 
 ```bash
-cd backend
 python3 -m pip install -r requirements.txt
-python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-Frontend:
+Build the frontend once, or keep rebuilding `frontend/dist` while you work:
 
 ```bash
 cd frontend
 npm install
+npm run build
+# or
+npm run build:watch
+```
+
+Run the backend from `backend/` after `frontend/dist/index.html` exists:
+
+```bash
+cd backend
+python3 -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --reload
+```
+
+The backend now serves the built SPA from `frontend/dist` and will fail startup if those assets are missing. `RESEARCH_APP_FRONTEND_DIST_PATH` can override the default dist location.
+
+The Vite dev server still works for frontend-only iteration:
+
+```bash
+cd frontend
 npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
@@ -59,6 +75,7 @@ Useful overrides:
 
 - `RESEARCH_APP_DATABASE_URL=mysql+pymysql://user:pass@host:3306/research_app`
 - `RESEARCH_APP_DATABASE_URL=postgresql+psycopg://user:pass@host:5432/research_app`
+- `RESEARCH_APP_FRONTEND_DIST_PATH=/absolute/path/to/frontend/dist`
 - `RESEARCH_APP_OPENAI_API_KEY=...`
 - `RESEARCH_APP_OIDC_ISSUER=...`
 - `RESEARCH_APP_OIDC_AUDIENCE=...`
@@ -78,3 +95,4 @@ Frontend overrides:
 
 - Backend tests: `python3 -m pytest backend/tests -q`
 - Frontend build: `cd frontend && npm run build`
+- Frontend watch build: `cd frontend && npm run build:watch`

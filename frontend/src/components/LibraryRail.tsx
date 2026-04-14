@@ -30,13 +30,25 @@ export function LibraryRail({
 }: LibraryRailProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const sourceLabel = (item: CorpusItem) => {
+    if (item.sourceKind !== 'watch_capture') {
+      return 'upload'
+    }
+
+    try {
+      return new URL(item.sourceUrl ?? '').hostname.replace(/^www\./, '') || 'watch'
+    } catch {
+      return 'watch'
+    }
+  }
+
   return (
     <Stack gap="md" style={{ height: '100%' }}>
       <Group justify="space-between" align="flex-start">
         <div>
           <Title order={3}>Library</Title>
           <Text size="sm" c="dimmed">
-            Imported files stay local to this browser origin.
+            Imports and watch captures stay local to this browser origin.
           </Text>
         </div>
         <Button size="xs" color="teal" onClick={() => fileInputRef.current?.click()}>
@@ -109,6 +121,9 @@ export function LibraryRail({
                   </Badge>
                 </Group>
                 <Group gap="xs">
+                  <Badge variant="outline" color={item.sourceKind === 'watch_capture' ? 'blue' : 'gray'}>
+                    {sourceLabel(item)}
+                  </Badge>
                   <Badge variant="outline">{item.mediaType || 'unknown'}</Badge>
                   <Badge variant="outline">{humanBytes(item.sizeBytes)}</Badge>
                   <Badge variant="outline">{formatDuration(item.durationMs)}</Badge>
@@ -118,7 +133,7 @@ export function LibraryRail({
           ))}
           {items.length === 0 ? (
             <Text size="sm" c="dimmed">
-              Import an mp4, mp3, or wav file to start building the local corpus.
+              Import an mp4, mp3, or wav file, or use Watch to capture a browser tab into the local corpus.
             </Text>
           ) : null}
         </Stack>

@@ -2,5 +2,6 @@ fastapi>=0.135,<1
 openai>=2.31,<3
 openai-chatkit>=1.6,<2
 pydantic-settings>=2.13,<3
+psycopg[binary]>=3.2,<4
 sqlalchemy>=2.0,<3
 uvicorn>=0.44,<1

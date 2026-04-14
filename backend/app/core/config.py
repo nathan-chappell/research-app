@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+DEFAULT_FRONTEND_DIST_PATH = Path(__file__).resolve().parents[3] / "frontend" / "dist"
 
 
 class Settings(BaseSettings):
@@ -17,6 +21,7 @@ class Settings(BaseSettings):
     app_name: str = "Research App API"
     api_prefix: str = "/api"
     debug: bool = False
+    frontend_dist_path: str = str(DEFAULT_FRONTEND_DIST_PATH)
 
     database_url: str = "sqlite:///./research_app.db"
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:5173"])

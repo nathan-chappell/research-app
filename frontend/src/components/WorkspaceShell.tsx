@@ -14,6 +14,7 @@ import { ChatPane } from './ChatPane'
 import { EvidencePane } from './EvidencePane'
 import { ExplorePane } from './ExplorePane'
 import { LibraryRail } from './LibraryRail'
+import { WatchPane } from './WatchPane'
 import { TranscriptPane } from './TranscriptPane'
 
 function sortByNewest<T extends { importedAt?: string; updatedAt?: string }>(items: T[]) {
@@ -32,7 +33,7 @@ export function WorkspaceShell() {
   const [mediaUrl, setMediaUrl] = useState<string>()
   const [targetTimestampMs, setTargetTimestampMs] = useState<number>()
   const [evidence, setEvidence] = useState<EvidenceBundle | null>(null)
-  const [viewMode, setViewMode] = useState<'workspace' | 'explore'>('workspace')
+  const [viewMode, setViewMode] = useState<'workspace' | 'explore' | 'watch'>('workspace')
 
   const corpusItems = useLiveQuery(
     async () =>
@@ -203,10 +204,11 @@ export function WorkspaceShell() {
             </div>
             <SegmentedControl
               value={viewMode}
-              onChange={(value) => setViewMode(value as 'workspace' | 'explore')}
+              onChange={(value) => setViewMode(value as 'workspace' | 'explore' | 'watch')}
               data={[
                 { label: 'Workspace', value: 'workspace' },
                 { label: 'Explore', value: 'explore' },
+                { label: 'Watch', value: 'watch' },
               ]}
             />
           </Group>
@@ -295,7 +297,9 @@ export function WorkspaceShell() {
             />
           </Box>
         </Box>
-      ) : (
+      ) : null}
+
+      {viewMode === 'explore' ? (
         <Box
           style={{
             minHeight: 'calc(100vh - 100px)',
@@ -312,7 +316,25 @@ export function WorkspaceShell() {
             activeCorpusItemId={selectedCorpusItemId}
           />
         </Box>
-      )}
+      ) : null}
+
+      <Box
+        style={{
+          minHeight: 'calc(100vh - 100px)',
+          borderRadius: 8,
+          border: '1px solid #d7e6dd',
+          background: '#f8fcf9',
+          padding: 16,
+          display: viewMode === 'watch' ? 'block' : 'none',
+        }}
+      >
+        <WatchPane
+          api={api}
+          libraryId={libraryId}
+          semanticCapabilities={semanticCapabilities}
+          onCaptureImported={setSelectedCorpusItemId}
+        />
+      </Box>
     </AppShell>
   )
 }

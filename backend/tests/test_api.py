@@ -8,19 +8,22 @@ from pathlib import Path
 test_db_path = Path(__file__).with_name("test.db")
 if test_db_path.exists():
     test_db_path.unlink()
+frontend_dist_path = Path(__file__).with_name("frontend_dist")
 
 os.environ.setdefault("RESEARCH_APP_DATABASE_URL", f"sqlite:///{test_db_path}")
 os.environ.setdefault("RESEARCH_APP_AUTH_DISABLED", "true")
+os.environ.setdefault("RESEARCH_APP_FRONTEND_DIST_PATH", str(frontend_dist_path))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient
+import pytest
 
 from app.chatkit.server import ResearchChatKitServer
 from app.chatkit.store import SQLAlchemyAttachmentStore, SQLAlchemyChatKitStore
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.db.base import Base
 from app.db.session import SessionLocal, engine
-from app.main import app
+from app.main import app, create_app
 from app.models import ChatAttachment, ChatMessage, ChatThread, OpenAIConversation
 from app.services.openai_service import OpenAIService
 from app.services.semantic_service import SemanticSearchService
@@ -91,6 +94,36 @@ def test_health_and_semantic_capabilities_report_mode() -> None:
     payload = response.json()
     assert payload["enabled"] is False
     assert payload["fallback_backend"] == "local-browser"
+
+
+def test_frontend_routes_are_served_from_dist_fixture() -> None:
+    root_response = client.get("/")
+    assert root_response.status_code == 200
+    assert "test frontend" in root_response.text
+
+    spa_response = client.get("/app/watch-window")
+    assert spa_response.status_code == 200
+    assert "test frontend" in spa_response.text
+
+    asset_response = client.get("/assets/app.js")
+    assert asset_response.status_code == 200
+    assert "frontend dist fixture" in asset_response.text
+
+    missing_api_response = client.get("/api/does-not-exist")
+    assert missing_api_response.status_code == 404
+
+
+def test_backend_startup_fails_when_frontend_dist_is_missing(tmp_path: Path) -> None:
+    settings = Settings(
+        database_url=get_settings().database_url,
+        auth_disabled=True,
+        frontend_dist_path=str(tmp_path / "missing-dist"),
+    )
+    failing_app = create_app(settings)
+
+    with pytest.raises(RuntimeError, match="Built frontend assets are required"):
+        with TestClient(failing_app):
+            pass
 
 
 def test_semantic_sync_search_and_theme_labels() -> None:

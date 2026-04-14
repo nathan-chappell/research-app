@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { useAppAuth } from './auth/context'
 import { LoginScreen } from './components/LoginScreen'
 import { WorkspaceShell } from './components/WorkspaceShell'
+import { WatchWindowPage } from './components/WatchWindowPage'
 
 function App() {
   const auth = useAppAuth()
@@ -24,6 +25,10 @@ function App() {
       <Route
         path="/app"
         element={auth.isAuthenticated ? <WorkspaceShell /> : <Navigate replace to="/login" />}
+      />
+      <Route
+        path="/app/watch-window"
+        element={auth.isAuthenticated ? <WatchWindowPage /> : <Navigate replace to="/login" />}
       />
       <Route
         path="*"
