@@ -7,6 +7,7 @@ from typing import Any
 from chatkit.server import ChatKitServer
 from chatkit.store import default_generate_id
 from chatkit.types import (
+    Annotation,
     AssistantMessageContent,
     AssistantMessageContentPartDone,
     AssistantMessageContentPartTextDelta,
@@ -424,15 +425,14 @@ class ResearchChatKitServer(ChatKitServer[RequestContext]):
             "instructions": instructions,
         }
 
-    def _build_annotations(self, evidence_refs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        annotations = []
+    def _build_annotations(self, evidence_refs: list[dict[str, Any]]) -> list[Annotation]:
+        annotations: list[Annotation] = []
         for index, ref in enumerate(evidence_refs[:3]):
             timestamp_ms = _coerce_int(ref.get("timestampMs"))
             annotations.append(
-                {
-                    "type": "annotation",
-                    "index": None,
-                    "source": EntitySource(
+                Annotation(
+                    index=None,
+                    source=EntitySource(
                         id=f"local-evidence-{index}",
                         title=_coerce_text(ref.get("title")) or _timestamp_label(timestamp_ms),
                         description=_coerce_text(ref.get("excerpt")) or None,
@@ -445,8 +445,8 @@ class ResearchChatKitServer(ChatKitServer[RequestContext]):
                             "timestampMs": timestamp_ms,
                             "kind": ref.get("kind"),
                         },
-                    ).model_dump(mode="json"),
-                }
+                    ),
+                )
             )
         return annotations
 

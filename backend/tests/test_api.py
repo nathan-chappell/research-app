@@ -4,6 +4,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 test_db_path = Path(__file__).with_name("test.db")
 if test_db_path.exists():
@@ -52,8 +53,8 @@ def _chat_headers(active_corpus_item_id: str | None = None) -> dict[str, str]:
     return headers
 
 
-def _sse_events(response) -> list[dict[str, object]]:
-    events = []
+def _sse_events(response: Any) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
     for line in response.text.splitlines():
         if line.startswith("data: "):
             events.append(json.loads(line.removeprefix("data: ")))
@@ -343,6 +344,7 @@ def test_chatkit_round_trip_streams_progress_and_metadata() -> None:
         assert assistant_row.metadata_json["phase"] == "answered_fallback"
         assert assistant_row.metadata_json["conversation_id"] == "conv_seed"
         assert assistant_row.metadata_json["response_id"] is None
+        assert assistant_row.evidence_refs_json is not None
         assert assistant_row.evidence_refs_json[0]["corpusItemId"] == "corp_1"
 
 

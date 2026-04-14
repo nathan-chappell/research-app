@@ -26,6 +26,12 @@ Install Python dependencies from the repo root:
 python3 -m pip install -r requirements.txt
 ```
 
+Install Python dev tooling, including backend type checking:
+
+```bash
+python3 -m pip install -r requirements-dev.txt
+```
+
 Build the frontend once, or keep rebuilding `frontend/dist` while you work:
 
 ```bash
@@ -94,5 +100,6 @@ Frontend overrides:
 ## Verification
 
 - Backend tests: `python3 -m pytest backend/tests -q`
+- Backend type check: `python3 -m pyright`
 - Frontend build: `cd frontend && npm run build`
 - Frontend watch build: `cd frontend && npm run build:watch`

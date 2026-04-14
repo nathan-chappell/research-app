@@ -1,0 +1,18 @@
+{
+  "include": [
+    "backend/app",
+    "backend/tests/test_api.py"
+  ],
+  "exclude": [
+    "backend/tests/frontend_dist"
+  ],
+  "executionEnvironments": [
+    {
+      "root": "backend"
+    }
+  ],
+  "pythonVersion": "3.14",
+  "typeCheckingMode": "standard",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false
+}

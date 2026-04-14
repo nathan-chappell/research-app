@@ -18,6 +18,17 @@ class VerifiedPrincipal:
     claims: dict[str, Any]
 
 
+def _claim_text(claims: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = claims.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
 def _decode_token(token: str, settings: Settings) -> dict[str, Any]:
     if not settings.oidc_jwks_url or not settings.oidc_issuer or not settings.oidc_audience:
         raise HTTPException(
@@ -38,6 +49,9 @@ def _decode_token(token: str, settings: Settings) -> dict[str, Any]:
 
 
 def get_or_create_user(db: Session, settings: Settings, token: str | None) -> VerifiedPrincipal:
+    email: str | None
+    display_name: str | None
+
     if settings.auth_disabled:
         subject = settings.dev_user_subject
         email = settings.dev_user_email
@@ -53,8 +67,8 @@ def get_or_create_user(db: Session, settings: Settings, token: str | None) -> Ve
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Missing bearer token.")
         claims = _decode_token(token, settings)
         subject = str(claims["sub"])
-        email = claims.get("email")
-        display_name = claims.get("name") or claims.get("preferred_username")
+        email = _claim_text(claims, "email")
+        display_name = _claim_text(claims, "name", "preferred_username")
 
     user = db.query(User).filter(User.oidc_subject == subject).one_or_none()
     if user is None:

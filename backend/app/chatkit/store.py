@@ -19,9 +19,9 @@ from app.models import (
 )
 
 
-THREAD_METADATA_ADAPTER = TypeAdapter(ThreadMetadata)
-THREAD_ITEM_ADAPTER = TypeAdapter(ThreadItem)
-ATTACHMENT_ADAPTER = TypeAdapter(Attachment)
+THREAD_METADATA_ADAPTER: TypeAdapter[ThreadMetadata] = TypeAdapter(ThreadMetadata)
+THREAD_ITEM_ADAPTER: TypeAdapter[ThreadItem] = TypeAdapter(ThreadItem)
+ATTACHMENT_ADAPTER: TypeAdapter[Attachment] = TypeAdapter(Attachment)
 
 
 def _item_role(item: ThreadItem) -> str:

@@ -226,12 +226,17 @@ class OpenAIService:
                 response_format="diarized_json",
                 chunking_strategy="auto",
             )
-            payload = response.model_dump() if hasattr(response, "model_dump") else {"text": str(response)}
-            segments = payload.get("segments") or []
+            payload: dict[str, Any] = (
+                response.model_dump() if hasattr(response, "model_dump") else {"text": str(response)}
+            )
+            raw_segments = payload.get("segments")
+            segments = raw_segments if isinstance(raw_segments, list) else []
             if not segments and payload.get("text"):
                 segments = [{"start": 0, "end": 0, "text": payload["text"], "speaker": None}]
 
             for raw_segment in segments:
+                if not isinstance(raw_segment, dict):
+                    continue
                 text = (raw_segment.get("text") or "").strip()
                 segment_start = max(0, int(float(raw_segment.get("start") or 0) * 1000))
                 segment_end = max(segment_start, int(float(raw_segment.get("end") or 0) * 1000))
